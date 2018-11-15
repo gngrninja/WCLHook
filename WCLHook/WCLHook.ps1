@@ -1,69 +1,68 @@
-using module PSDsHook
 [cmdletbinding()]
 param(
+    [Parameter(
 
+    )]
+    [switch]
+    $StartJob,
+
+    [Parameter(
+
+    )]
+    [switch]
+    $GetJobInfo,
+
+    [Parameter(
+
+    )]
+    [switch]
+    $StopJob 
 )
 
-$functions = @( Get-ChildItem -Path "$PSScriptRoot\functions\*.ps1" )
+$name = "WCL Log Check"
 
-@($functions) | ForEach-Object {
+if ($StartJob) {
 
-    Try {
+    Write-Output "Attempting to start job..."
 
-        Write-Verbose "Importing function $($_.Name)"
-        . $_.FullName
+    $curJobInfo = Get-Job -Name $name -ErrorAction SilentlyContinue
 
-    } Catch {
+    if (!($curJobInfo) -or $curJobInfo.State -ne 'Running') {
 
-        Write-Error -Message "Failed to import function $($_.FullName): $_"
-        
+        Write-Output ($curJobInfo | Out-String)
+
+        $job = [scriptblock]::Create("$PSScriptRoot\job.ps1")
+        Start-Job -Name $name -ArgumentList "$PSScriptRoot" -ScriptBlock $job
+
+    } else {
+
+        Write-Host "Job already started!"
+
     }
 
 }
 
-#Get WarcraftLogs Api key from config.json
-$wclKey = Get-Content -Path "$PSScriptRoot\config.json" | ConvertFrom-Json | Select-Object -ExpandProperty wclApiKey
+if ($GetJobInfo) {
 
-#Retive the list of zones
-$zones = Get-Zones
+    $info = Receive-Job -Name $name
+    Write-Host ($info | Out-String)
 
-$reportUrl = "/reports/guild/ninjabread%20men/destromath/us"
+}
 
-$curLogFile = "$PSScriptRoot\log.json"
+if ($StopJob) {
 
-while ($true) {
+    $job = Get-Job -Name $name -ErrorAction SilentlyContinue
 
-    $result    = $null
-    $lastThree = $null
-    $curReport = $null
+    if ($job) {
 
-    Write-Verbose "Looking up latest logs..."
+        Write-Output "Stopping job..."
 
-    $result    = Invoke-WclApi -Url $reportUrl
-    $lastThree = $result | Select-Object -First 3
-    $curReport = $result[0]
+        $job | Stop-Job
+        $job | Remove-Job 
 
-    if (!(Test-Path -Path $curLogFile -ErrorAction SilentlyContinue)) {
-    
-        Write-Verbose "Creating [$curLogFile] as it does not exist!"
-        $curReport | ConvertTo-Json | Out-File -FilePath $curLogFile
-        Invoke-LogInfoSend -Report $curReport
-    
     } else {
-    
-        Write-Verbose "Checking [$curLogFile] against current results..."
-    
-        $curLogInfo = Get-Content -Path $curLogFile | ConvertFrom-Json
-    
-        if ($curLogInfo.id -ne $curReport.id) {
-    
-            Write-Verbose "Exporting current report to the file as the report IDs are different..."
-            $curReport | ConvertTo-Json | Out-File -FilePath $curLogFile
-            Invoke-LogInfoSend -Report $curLogInfo
-    
-        }
+
+        Write-Output "Job not started!"
+
     }
-
-    Start-Sleep -Seconds 10
-
 }
